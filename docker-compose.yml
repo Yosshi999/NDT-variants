@@ -1,0 +1,10 @@
+version: '3'
+services:
+    pcl:
+        build:
+            context: .
+            dockerfile: ./Dockerfile
+        container_name: ubuntu2004-pcl
+        volumes:
+            - .:/workspace
+

@@ -2,14 +2,14 @@ cmake_minimum_required(VERSION 3.17)
 
 project(main)
 
-find_package(PCL 1.9 REQUIRED)
+find_package(PCL 1.10 REQUIRED)
 include_directories(${PCL_INCLUDE_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_compile_options(-Wall -O3)
 
-add_executable(voxel_grid_filter voxel_grid_filter.cpp)
-add_executable(ndt ndt.cpp)
+add_executable(voxel_grid_filter sample/voxel_grid_filter.cpp)
+add_executable(ndt sample/ndt.cpp)
 set_property(TARGET voxel_grid_filter PROPERTY CXX_STANDARD 14)
 set_property(TARGET ndt PROPERTY CXX_STANDARD 14)
 target_include_directories(ndt PUBLIC include)
