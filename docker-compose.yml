@@ -1,10 +1,18 @@
 version: '3'
 services:
     pcl:
+        tty: true
         build:
             context: .
             dockerfile: ./Dockerfile
+            args:
+                uid: $uid
+                gid: $gid
         container_name: ubuntu2004-pcl
         volumes:
             - .:/workspace
+            - /tmp/.X11-unix:/tmp/.X11-unix
+        environment:
+            - DISPLAY=${DISPLAY}
+        network_mode: host
 
