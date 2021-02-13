@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.17)
 
 project(main)
 
-find_package(PCL 1.9 REQUIRED)
+find_package(PCL 1.11 REQUIRED)
 include_directories(${PCL_INCLUDE_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 link_directories(${PCL_LIBRARY_DIRS})

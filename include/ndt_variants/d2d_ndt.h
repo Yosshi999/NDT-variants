@@ -9,8 +9,6 @@
 
 namespace pclex {
 using namespace pcl;
-using boost::shared_ptr;
-using boost::make_shared;
 
 template <typename PointSource, typename PointTarget>
 class D2DNDT : public Registration<PointSource, PointTarget> {
@@ -31,7 +29,7 @@ public:
   using Ptr = shared_ptr<D2DNDT<PointSource, PointTarget>>;
   using ConstPtr = shared_ptr<const D2DNDT<PointSource, PointTarget>>;
 
-  D2DNDT(float resolution = 1.0f, double step_size = 0.1, double outlier_ratio = 0.55);
+  D2DNDT();
   ~D2DNDT() {}
 
   inline void
@@ -39,6 +37,42 @@ public:
   {
     Parent::setInputTarget(cloud);
     init();
+  }
+
+  inline float
+  getResolution() const
+  {
+    return resolution_;
+  }
+
+  inline void
+  setResolution(float resolution)
+  {
+    resolution_ = resolution;
+  }
+
+  inline double
+  getStepSize() const
+  {
+    return step_size_;
+  }
+
+  inline void
+  setStepSize(double step_size)
+  {
+    step_size_ = step_size;
+  }
+
+  inline double
+  getOutlierRatio() const
+  {
+    return outlier_ratio_;
+  }
+
+  inline void
+  setOutlierRatio(double outlier_ratio)
+  {
+    outlier_ratio_ = outlier_ratio;
   }
 
   inline double
@@ -68,8 +102,8 @@ public:
     double norm = v.norm();
     v.normalize();
     Eigen::Matrix3d wedge = computeWedge(v(0), v(1), v(2));
-    auto mat = cos(norm) * Eigen::Matrix3d::Identity() +
-               (1 - cos(norm)) * v * v.transpose() + sin(norm) * wedge;
+    auto mat = cos(norm) * Eigen::Matrix3d::Identity() + (1 - cos(norm)) * v * v.transpose() +
+               sin(norm) * wedge;
     return mat;
   }
 
@@ -128,8 +162,7 @@ protected:
   using Parent::update_visualizer_;
 
   void
-  computeTransformation(PointCloudSource& output,
-                        const Eigen::Matrix4f& guess) override;
+  computeTransformation(PointCloudSource& output, const Eigen::Matrix4f& guess) override;
 
   void inline init()
   {
@@ -206,35 +239,68 @@ protected:
                       Eigen::Matrix<double, 6, 1>& score_gradient,
                       Eigen::Matrix<double, 6, 6>& hessian);
 
-  bool
-  updateIntervalMT(double& a_l,
-                   double& f_l,
-                   double& g_l,
-                   double& a_u,
-                   double& f_u,
-                   double& g_u,
-                   double a_t,
-                   double f_t,
-                   double g_t) const;
+    /** \brief Update interval of possible step lengths for More-Thuente method, \f$ I \f$ in More-Thuente (1994)
+      * \note Updating Algorithm until some value satisfies \f$ \psi(\alpha_k) \leq 0 \f$ and \f$ \phi'(\alpha_k) \geq 0 \f$
+      * and Modified Updating Algorithm from then on [More, Thuente 1994].
+      * \param[in,out] a_l first endpoint of interval \f$ I \f$, \f$ \alpha_l \f$ in Moore-Thuente (1994)
+      * \param[in,out] f_l value at first endpoint, \f$ f_l \f$ in Moore-Thuente (1994), \f$ \psi(\alpha_l) \f$ for Update Algorithm and \f$ \phi(\alpha_l) \f$ for Modified Update Algorithm
+      * \param[in,out] g_l derivative at first endpoint, \f$ g_l \f$ in Moore-Thuente (1994), \f$ \psi'(\alpha_l) \f$ for Update Algorithm and \f$ \phi'(\alpha_l) \f$ for Modified Update Algorithm
+      * \param[in,out] a_u second endpoint of interval \f$ I \f$, \f$ \alpha_u \f$ in Moore-Thuente (1994)
+      * \param[in,out] f_u value at second endpoint, \f$ f_u \f$ in Moore-Thuente (1994), \f$ \psi(\alpha_u) \f$ for Update Algorithm and \f$ \phi(\alpha_u) \f$ for Modified Update Algorithm
+      * \param[in,out] g_u derivative at second endpoint, \f$ g_u \f$ in Moore-Thuente (1994), \f$ \psi'(\alpha_u) \f$ for Update Algorithm and \f$ \phi'(\alpha_u) \f$ for Modified Update Algorithm
+      * \param[in] a_t trial value, \f$ \alpha_t \f$ in Moore-Thuente (1994)
+      * \param[in] f_t value at trial value, \f$ f_t \f$ in Moore-Thuente (1994), \f$ \psi(\alpha_t) \f$ for Update Algorithm and \f$ \phi(\alpha_t) \f$ for Modified Update Algorithm
+      * \param[in] g_t derivative at trial value, \f$ g_t \f$ in Moore-Thuente (1994), \f$ \psi'(\alpha_t) \f$ for Update Algorithm and \f$ \phi'(\alpha_t) \f$ for Modified Update Algorithm
+      * \return if interval converges
+      */
+    bool
+    updateIntervalMT (double &a_l, double &f_l, double &g_l,
+                      double &a_u, double &f_u, double &g_u,
+                      double a_t, double f_t, double g_t);
 
+  /** \brief Select new trial value for More-Thuente method.
+    * \note Trial Value Selection [More, Thuente 1994], \f$ \psi(\alpha_k) \f$ is used for \f$ f_k \f$ and \f$ g_k \f$
+    * until some value satisfies the test \f$ \psi(\alpha_k) \leq 0 \f$ and \f$ \phi'(\alpha_k) \geq 0 \f$
+    * then \f$ \phi(\alpha_k) \f$ is used from then on.
+    * \note Interpolation Minimizer equations from Optimization Theory and Methods: Nonlinear Programming By Wenyu Sun, Ya-xiang Yuan (89-100).
+    * \param[in] a_l first endpoint of interval \f$ I \f$, \f$ \alpha_l \f$ in Moore-Thuente (1994)
+    * \param[in] f_l value at first endpoint, \f$ f_l \f$ in Moore-Thuente (1994)
+    * \param[in] g_l derivative at first endpoint, \f$ g_l \f$ in Moore-Thuente (1994)
+    * \param[in] a_u second endpoint of interval \f$ I \f$, \f$ \alpha_u \f$ in Moore-Thuente (1994)
+    * \param[in] f_u value at second endpoint, \f$ f_u \f$ in Moore-Thuente (1994)
+    * \param[in] g_u derivative at second endpoint, \f$ g_u \f$ in Moore-Thuente (1994)
+    * \param[in] a_t previous trial value, \f$ \alpha_t \f$ in Moore-Thuente (1994)
+    * \param[in] f_t value at previous trial value, \f$ f_t \f$ in Moore-Thuente (1994)
+    * \param[in] g_t derivative at previous trial value, \f$ g_t \f$ in Moore-Thuente (1994)
+    * \return new trial value
+    */
   double
-  trialValueSelectionMT(double a_l,
-                        double f_l,
-                        double g_l,
-                        double a_u,
-                        double f_u,
-                        double g_u,
-                        double a_t,
-                        double f_t,
-                        double g_t) const;
+  trialValueSelectionMT (double a_l, double f_l, double g_l,
+                          double a_u, double f_u, double g_u,
+                          double a_t, double f_t, double g_t);
 
+  /** \brief Auxiliary function used to determine endpoints of More-Thuente interval.
+    * \note \f$ \psi(\alpha) \f$ in Equation 1.6 (Moore, Thuente 1994)
+    * \param[in] a the step length, \f$ \alpha \f$ in More-Thuente (1994)
+    * \param[in] f_a function value at step length a, \f$ \phi(\alpha) \f$ in More-Thuente (1994)
+    * \param[in] f_0 initial function value, \f$ \phi(0) \f$ in Moore-Thuente (1994)
+    * \param[in] g_0 initial function gradiant, \f$ \phi'(0) \f$ in More-Thuente (1994)
+    * \param[in] mu the step length, constant \f$ \mu \f$ in Equation 1.1 [More, Thuente 1994]
+    * \return sufficient decrease value
+    */
   inline double
-  auxilaryFunction_PsiMT(
-      double a, double f_a, double f_0, double g_0, double mu = 1.e-4) const
+  auxilaryFunction_PsiMT(double a, double f_a, double f_0, double g_0, double mu = 1.e-4) const
   {
     return f_a - f_0 - mu * g_0 * a;
   }
 
+  /** \brief Auxiliary function derivative used to determine endpoints of More-Thuente interval.
+   * \note \f$ \psi'(\alpha) \f$, derivative of Equation 1.6 (Moore, Thuente 1994)
+   * \param[in] g_a function gradient at step length a, \f$ \phi'(\alpha) \f$ in More-Thuente (1994)
+   * \param[in] g_0 initial function gradiant, \f$ \phi'(0) \f$ in More-Thuente (1994)
+   * \param[in] mu the step length, constant \f$ \mu \f$ in Equation 1.1 [More, Thuente 1994]
+   * \return sufficient decrease derivative
+   */
   inline double
   auxilaryFunction_dPsiMT(double g_a, double g_0, double mu = 1.e-4) const
   {
@@ -261,7 +327,7 @@ protected:
   std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d>> trans_means_;
 
 public:
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  PCL_MAKE_ALIGNED_OPERATOR_NEW
 };
 
 } // namespace pclex

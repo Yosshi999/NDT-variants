@@ -5,13 +5,11 @@ namespace pclex {
 using namespace pcl;
 
 template <typename PointSource, typename PointTarget>
-D2DNDT<PointSource, PointTarget>::D2DNDT(float resolution,
-                                         double step_size,
-                                         double outlier_ratio)
+D2DNDT<PointSource, PointTarget>::D2DNDT()
 : target_cells_()
-, resolution_(resolution)
-, step_size_(step_size)
-, outlier_ratio_(outlier_ratio)
+, resolution_(1.0f)
+, step_size_(0.1)
+, outlier_ratio_(0.55)
 , min_points_per_voxel_(6)
 , gauss_d1_()
 , gauss_d2_()
