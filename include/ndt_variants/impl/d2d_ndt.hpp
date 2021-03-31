@@ -173,7 +173,7 @@ D2DNDT<PointSource, PointTarget>::computeDerivatives(
     target_cells_.nearestKSearch(x_trans_pt, 1, neighborhood, distances);
 
     for (const auto& cell : neighborhood) {
-      computePointDerivatives(x_trans);
+      computeLocalDerivatives(x_trans);
       auto x_diff = x_trans - cell->getMean();
       auto c_inv = (cell->getCov() + x_trans_cov).inverse();
       score +=
@@ -185,7 +185,7 @@ D2DNDT<PointSource, PointTarget>::computeDerivatives(
 
 template <typename PointSource, typename PointTarget>
 void
-D2DNDT<PointSource, PointTarget>::computePointDerivatives(const Eigen::Vector3d& x,
+D2DNDT<PointSource, PointTarget>::computeLocalDerivatives(const Eigen::Vector3d& x,
                                                           bool compute_hessian)
 {
   point_jacobian_.block<3, 3>(0, 3) = computeWedge(x(0), x(1), x(2)) * (-1);
@@ -299,7 +299,7 @@ D2DNDT<PointSource, PointTarget>::computeHessian(Eigen::Matrix<double, 6, 6>& he
     for (const auto& cell : neighborhood) {
       // Compute derivative of transform function w.r.t. transform vector, J_E and H_E
       // in Equations 6.18 and 6.20 [Magnusson 2009]
-      computePointDerivatives(x_trans);
+      computeLocalDerivatives(x_trans);
 
       // Denorm point, x_k' in Equations 6.12 and 6.13 [Magnusson 2009]
       auto x_diff = x_trans - cell->getMean();

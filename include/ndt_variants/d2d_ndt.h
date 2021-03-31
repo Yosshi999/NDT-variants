@@ -29,6 +29,9 @@ public:
   using Ptr = shared_ptr<D2DNDT<PointSource, PointTarget>>;
   using ConstPtr = shared_ptr<const D2DNDT<PointSource, PointTarget>>;
 
+  /** \brief Constructor.
+   * Sets outlier_ratio_ to 0.55, step_size_ to 0.1 and resolution_ to 1.0
+   */
   D2DNDT();
   ~D2DNDT() {}
 
@@ -95,6 +98,7 @@ public:
     return wedge;
   }
 
+  /** \brief Rodrigues rotation formula. */
   static inline Eigen::Matrix3d
   computeExpWedge(double x, double y, double z)
   {
@@ -107,6 +111,10 @@ public:
     return mat;
   }
 
+  /** \brief Convert 6 element transformation vector to affine transformation.
+   * \param[in] x transformation vector of the form [x, y, z, *(3 elements of rotation vector)]
+   * \param[out] trans affine transform corresponding to given transformation vector
+   */
   static void
   convertTransform(const Eigen::Matrix<double, 6, 1>& x, Eigen::Affine3f& trans)
   {
@@ -114,6 +122,10 @@ public:
             computeExpWedge(x(3), x(4), x(5)).cast<float>();
   }
 
+  /** \brief Convert 6 element transformation vector to transformation matrix.
+   * \param[in] x transformation vector of the form [x, y, z, *(3 elements of rotation vector)]
+   * \param[out] trans affine transform corresponding to given transformation vector
+   */
   static void
   convertTransform(const Eigen::Matrix<double, 6, 1>& x, Eigen::Matrix4f& trans)
   {
@@ -161,9 +173,20 @@ protected:
 
   using Parent::update_visualizer_;
 
+  /** \brief Estimate the transformation and returns the transformed source (input)
+   * as output.
+   * \param[out] output the resultant input transformed point cloud dataset
+   */
+  virtual void
+  computeTransformation(PointCloudSource& output)
+  {
+    computeTransformation(output, Eigen::Matrix4f::Identity());
+  }
+
   void
   computeTransformation(PointCloudSource& output, const Eigen::Matrix4f& guess) override;
 
+  /** \brief Initiate covariance voxel structure for the target. */
   void inline init()
   {
     target_cells_.setLeafSize(resolution_, resolution_, resolution_);
@@ -173,6 +196,9 @@ protected:
     target_cells_.filter(true);
   }
 
+  /** \brief Initiate covariance voxel structure for the source.
+   * This structure is no longer needed after obtaining its cells' centers and covariances.
+   */
   void inline initSource()
   {
     SourceGrid source_cells;
@@ -196,6 +222,7 @@ protected:
     }
   }
 
+  /** \brief Update the position and orientation of the source cloud. */
   void inline updateSource(const Eigen::Matrix4f& mat)
   {
     // std::cout << mat << std::endl;
@@ -207,11 +234,18 @@ protected:
     }
   }
 
+  /** \brief Compute derivatives of probability function w.r.t. the transformation
+   * vector.  \note Equation 20-27 [Stoyanov et al. 2012].
+   */
   double
   computeDerivatives(Eigen::Matrix<double, 6, 1>& score_gradient,
                      Eigen::Matrix<double, 6, 6>& hessian,
                      bool compute_hessian = true);
 
+  /** \brief Compute individual point contributions to derivatives of probability
+   * function w.r.t. the transformation vector.
+   * \note Equation 20-27 [Stoyanov et al. 2012].
+   */
   double
   updateDerivatives(Eigen::Matrix<double, 6, 1>& score_gradient,
                     Eigen::Matrix<double, 6, 6>& hessian,
@@ -219,17 +253,31 @@ protected:
                     const Eigen::Matrix3d& c_inv,
                     bool compute_hessian = true) const;
 
+  /** \brief Compute local derivatives. The result will be saved to
+   * point_jacobian_, cov_jacobian_, point_hessian_ and cov_hessian_.
+   * \note Equation 22,23,25,26 [Stoyanov et al. 2012].
+   */
   void
-  computePointDerivatives(const Eigen::Vector3d& x, bool compute_hessian = true);
+  computeLocalDerivatives(const Eigen::Vector3d& x, bool compute_hessian = true);
 
+  /** \brief Compute hessian of probability function w.r.t. the transformation
+   * vector.  \note Equation 24-27 [Stoyanov et al. 2012].
+   */
   void
   computeHessian(Eigen::Matrix<double, 6, 6>& hessian);
 
+  /** \brief Compute individual point contributions to hessian of probability
+   * function w.r.t. the transformation vector.
+   * \note Equation 24-27 [Stoyanov et al. 2012].
+   */
   void
   updateHessian(Eigen::Matrix<double, 6, 6>& hessian,
                 const Eigen::Vector3d& x_trans,
                 const Eigen::Matrix3d& c_inv) const;
 
+  /** \brief Compute line search step length and update transform and probability
+   * derivatives using More-Thuente method. \note Search Algorithm [More, Thuente 1994]
+   */
   double
   computeStepLengthMT(Eigen::Matrix<double, 6, 1>& step_dir,
                       double step_init,
@@ -239,24 +287,24 @@ protected:
                       Eigen::Matrix<double, 6, 1>& score_gradient,
                       Eigen::Matrix<double, 6, 6>& hessian);
 
-    /** \brief Update interval of possible step lengths for More-Thuente method, \f$ I \f$ in More-Thuente (1994)
-      * \note Updating Algorithm until some value satisfies \f$ \psi(\alpha_k) \leq 0 \f$ and \f$ \phi'(\alpha_k) \geq 0 \f$
-      * and Modified Updating Algorithm from then on [More, Thuente 1994].
-      * \param[in,out] a_l first endpoint of interval \f$ I \f$, \f$ \alpha_l \f$ in Moore-Thuente (1994)
-      * \param[in,out] f_l value at first endpoint, \f$ f_l \f$ in Moore-Thuente (1994), \f$ \psi(\alpha_l) \f$ for Update Algorithm and \f$ \phi(\alpha_l) \f$ for Modified Update Algorithm
-      * \param[in,out] g_l derivative at first endpoint, \f$ g_l \f$ in Moore-Thuente (1994), \f$ \psi'(\alpha_l) \f$ for Update Algorithm and \f$ \phi'(\alpha_l) \f$ for Modified Update Algorithm
-      * \param[in,out] a_u second endpoint of interval \f$ I \f$, \f$ \alpha_u \f$ in Moore-Thuente (1994)
-      * \param[in,out] f_u value at second endpoint, \f$ f_u \f$ in Moore-Thuente (1994), \f$ \psi(\alpha_u) \f$ for Update Algorithm and \f$ \phi(\alpha_u) \f$ for Modified Update Algorithm
-      * \param[in,out] g_u derivative at second endpoint, \f$ g_u \f$ in Moore-Thuente (1994), \f$ \psi'(\alpha_u) \f$ for Update Algorithm and \f$ \phi'(\alpha_u) \f$ for Modified Update Algorithm
-      * \param[in] a_t trial value, \f$ \alpha_t \f$ in Moore-Thuente (1994)
-      * \param[in] f_t value at trial value, \f$ f_t \f$ in Moore-Thuente (1994), \f$ \psi(\alpha_t) \f$ for Update Algorithm and \f$ \phi(\alpha_t) \f$ for Modified Update Algorithm
-      * \param[in] g_t derivative at trial value, \f$ g_t \f$ in Moore-Thuente (1994), \f$ \psi'(\alpha_t) \f$ for Update Algorithm and \f$ \phi'(\alpha_t) \f$ for Modified Update Algorithm
-      * \return if interval converges
-      */
-    bool
-    updateIntervalMT (double &a_l, double &f_l, double &g_l,
-                      double &a_u, double &f_u, double &g_u,
-                      double a_t, double f_t, double g_t);
+  /** \brief Update interval of possible step lengths for More-Thuente method, \f$ I \f$ in More-Thuente (1994)
+    * \note Updating Algorithm until some value satisfies \f$ \psi(\alpha_k) \leq 0 \f$ and \f$ \phi'(\alpha_k) \geq 0 \f$
+    * and Modified Updating Algorithm from then on [More, Thuente 1994].
+    * \param[in,out] a_l first endpoint of interval \f$ I \f$, \f$ \alpha_l \f$ in Moore-Thuente (1994)
+    * \param[in,out] f_l value at first endpoint, \f$ f_l \f$ in Moore-Thuente (1994), \f$ \psi(\alpha_l) \f$ for Update Algorithm and \f$ \phi(\alpha_l) \f$ for Modified Update Algorithm
+    * \param[in,out] g_l derivative at first endpoint, \f$ g_l \f$ in Moore-Thuente (1994), \f$ \psi'(\alpha_l) \f$ for Update Algorithm and \f$ \phi'(\alpha_l) \f$ for Modified Update Algorithm
+    * \param[in,out] a_u second endpoint of interval \f$ I \f$, \f$ \alpha_u \f$ in Moore-Thuente (1994)
+    * \param[in,out] f_u value at second endpoint, \f$ f_u \f$ in Moore-Thuente (1994), \f$ \psi(\alpha_u) \f$ for Update Algorithm and \f$ \phi(\alpha_u) \f$ for Modified Update Algorithm
+    * \param[in,out] g_u derivative at second endpoint, \f$ g_u \f$ in Moore-Thuente (1994), \f$ \psi'(\alpha_u) \f$ for Update Algorithm and \f$ \phi'(\alpha_u) \f$ for Modified Update Algorithm
+    * \param[in] a_t trial value, \f$ \alpha_t \f$ in Moore-Thuente (1994)
+    * \param[in] f_t value at trial value, \f$ f_t \f$ in Moore-Thuente (1994), \f$ \psi(\alpha_t) \f$ for Update Algorithm and \f$ \phi(\alpha_t) \f$ for Modified Update Algorithm
+    * \param[in] g_t derivative at trial value, \f$ g_t \f$ in Moore-Thuente (1994), \f$ \psi'(\alpha_t) \f$ for Update Algorithm and \f$ \phi'(\alpha_t) \f$ for Modified Update Algorithm
+    * \return if interval converges
+    */
+  bool
+  updateIntervalMT (double &a_l, double &f_l, double &g_l,
+                    double &a_u, double &f_u, double &g_u,
+                    double a_t, double f_t, double g_t);
 
   /** \brief Select new trial value for More-Thuente method.
     * \note Trial Value Selection [More, Thuente 1994], \f$ \psi(\alpha_k) \f$ is used for \f$ f_k \f$ and \f$ g_k \f$
@@ -311,15 +359,35 @@ protected:
 
   float resolution_;
   double step_size_;
+
+  /** \brief The ratio of outliers of points w.r.t. a normal distribution, Equation 6.7
+   * [Magnusson 2009]. */
   double outlier_ratio_;
   int min_points_per_voxel_;
 
+  /** \brief The normalization constants used fit the point distribution to a normal
+   * distribution, Equation 18 [Stoyanov et al. 2012]. */
   double gauss_d1_, gauss_d2_;
 
+  /** \brief The probability score of the transform applied to the input cloud,
+   * Equation 18 [Stoyanov et al. 2012]. */
   double trans_probability_;
 
+  /** \brief The first order derivative of the transformation of a point w.r.t. the
+   * transform vector, \f$ J_a \f$ in Equation 22 [Stoyanov et al. 2012]. */
   Eigen::Matrix<double, 3, 6> point_jacobian_;
+
+  /** \brief The first order derivative of the transformation of a covariance w.r.t.
+   * the transform vector, \f$ Z_a \f$ in Equation 23 [Stoyanov et al. 2012]. */
+  Eigen::Matrix<double, 3, 6> cov_jacobian_;
+
+  /** \brief The second order derivative of the transformation of a point w.r.t. the
+   * transform vector, \f$ H_{ab} \f$ in Equation 25 [Stoyanov et al. 2012]. */
   Eigen::Matrix<double, 18, 6> point_hessian_;
+
+  /** \brief The second order derivative of the transformation of a covariance w.r.t.
+   * the transform vector, \f$ Z_{ab} \f$ in Equation 26 [Stoyanov et al. 2012]. */
+  Eigen::Matrix<double, 3, 6> cov_hessian_;
 
   std::vector<Eigen::Matrix3d, Eigen::aligned_allocator<Eigen::Matrix3d>> source_covs_;
   std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d>> source_means_;
