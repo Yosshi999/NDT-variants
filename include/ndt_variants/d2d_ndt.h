@@ -189,6 +189,7 @@ protected:
   /** \brief Initiate covariance voxel structure for the target. */
   void inline init()
   {
+    std::cout << "[init] target points: " << target_->size() << std::endl;
     target_cells_.setLeafSize(resolution_, resolution_, resolution_);
     target_cells_.setInputCloud(target_);
     target_cells_.setMinPointPerVoxel(min_points_per_voxel_);
@@ -245,6 +246,12 @@ protected:
   /** \brief Compute individual point contributions to derivatives of probability
    * function w.r.t. the transformation vector.
    * \note Equation 20-27 [Stoyanov et al. 2012].
+   * \param[in,out] score_gradient gradient of the whole score.
+   * \param[in,out] hessian hessian of the whole score.
+   * \param[in] x_trans transformed mean vector distance. \f$ \mu_{ij} \f$ in Stoyanov et al. (2012)
+   * \param[in] c_inv \f$ B \f$ in Stoyanov et al. (2012)
+   * \param[in] compute_hessian if true, compute hessian of the whole score.
+   * \return individual score
    */
   double
   updateDerivatives(Eigen::Matrix<double, 6, 1>& score_gradient,
@@ -258,7 +265,9 @@ protected:
    * \note Equation 22,23,25,26 [Stoyanov et al. 2012].
    */
   void
-  computeLocalDerivatives(const Eigen::Vector3d& x, bool compute_hessian = true);
+  computeLocalDerivatives(const Eigen::Vector3d& x,
+                          const Eigen::Matrix3d& cov,
+                          bool compute_hessian = true);
 
   /** \brief Compute hessian of probability function w.r.t. the transformation
    * vector.  \note Equation 24-27 [Stoyanov et al. 2012].
@@ -304,7 +313,7 @@ protected:
   bool
   updateIntervalMT (double &a_l, double &f_l, double &g_l,
                     double &a_u, double &f_u, double &g_u,
-                    double a_t, double f_t, double g_t);
+                    double a_t, double f_t, double g_t) const;
 
   /** \brief Select new trial value for More-Thuente method.
     * \note Trial Value Selection [More, Thuente 1994], \f$ \psi(\alpha_k) \f$ is used for \f$ f_k \f$ and \f$ g_k \f$
@@ -325,7 +334,7 @@ protected:
   double
   trialValueSelectionMT (double a_l, double f_l, double g_l,
                           double a_u, double f_u, double g_u,
-                          double a_t, double f_t, double g_t);
+                          double a_t, double f_t, double g_t) const;
 
   /** \brief Auxiliary function used to determine endpoints of More-Thuente interval.
     * \note \f$ \psi(\alpha) \f$ in Equation 1.6 (Moore, Thuente 1994)
@@ -379,7 +388,7 @@ protected:
 
   /** \brief The first order derivative of the transformation of a covariance w.r.t.
    * the transform vector, \f$ Z_a \f$ in Equation 23 [Stoyanov et al. 2012]. */
-  Eigen::Matrix<double, 3, 6> cov_jacobian_;
+  Eigen::Matrix<double, 3, 18> cov_jacobian_;
 
   /** \brief The second order derivative of the transformation of a point w.r.t. the
    * transform vector, \f$ H_{ab} \f$ in Equation 25 [Stoyanov et al. 2012]. */
@@ -387,7 +396,7 @@ protected:
 
   /** \brief The second order derivative of the transformation of a covariance w.r.t.
    * the transform vector, \f$ Z_{ab} \f$ in Equation 26 [Stoyanov et al. 2012]. */
-  Eigen::Matrix<double, 3, 6> cov_hessian_;
+  Eigen::Matrix<double, 18, 18> cov_hessian_;
 
   std::vector<Eigen::Matrix3d, Eigen::aligned_allocator<Eigen::Matrix3d>> source_covs_;
   std::vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d>> source_means_;

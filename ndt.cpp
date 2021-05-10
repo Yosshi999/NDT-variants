@@ -1,15 +1,17 @@
 #include <pcl/filters/approximate_voxel_grid.h>
-#include <pcl/io/ply_io.h>
+#include <pcl/io/auto_io.h>
 #include <pcl/registration/ndt.h>
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/visualization/registration_visualizer.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <pcl/common/common.h>
 
 #include "ndt_variants/d2d_ndt.h"
 
 #include <iostream>
 #include <random>
+#include <thread>
 
 #define REGVIS 0
 
@@ -17,8 +19,8 @@ using PC = pcl::PointCloud<pcl::PointXYZ>;
 using PPC = pcl::PointCloud<pcl::PointXYZ>::Ptr;
 using CPPC = pcl::PointCloud<pcl::PointXYZ>::ConstPtr;
 constexpr int CAM = 1;
-constexpr double approxleaf = 0.01;
-constexpr double ndtresol = 0.02;
+constexpr double approxleaf = 0.02;
+constexpr double ndtresol = 0.04;
 constexpr bool apply_noise = false;
 constexpr float noise_scale = 0.01f;
 
@@ -26,7 +28,12 @@ int
 main(int argc, char* argv[])
 {
   PPC cloud(new PC);
-  pcl::io::loadPLYFile(argv[1], *cloud);
+  pcl::io::load(argv[1], *cloud);
+  pcl::PointXYZ minPt, maxPt;
+  pcl::getMinMax3D(*cloud, minPt, maxPt);
+  std::cout << "x size: " << maxPt.x - minPt.x << std::endl;
+  std::cout << "y size: " << maxPt.y - minPt.y << std::endl;
+  std::cout << "z size: " << maxPt.z - minPt.z << std::endl;
 
   PPC cloud2(new PC);
   pcl::copyPointCloud(*cloud, *cloud2);
@@ -66,7 +73,7 @@ main(int argc, char* argv[])
   while (!viewer->wasStopped())
   {
     viewer->spinOnce();
-    boost::this_thread::sleep(boost::posix_time::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
   viewer->spinOnce();
   }
@@ -77,11 +84,13 @@ main(int argc, char* argv[])
   PPC aligned(new PC);
   auto init_guess = Eigen::Matrix4f::Identity();
 #if 1
-  pclex::D2DNDT<pcl::PointXYZ, pcl::PointXYZ> ndt(ndtresol, 0.5);
+  pclex::D2DNDT<pcl::PointXYZ, pcl::PointXYZ> ndt;
+  ndt.setResolution(ndtresol);
+  ndt.setStepSize(0.2);
 #else
   pcl::NormalDistributionsTransform<pcl::PointXYZ, pcl::PointXYZ> ndt;
   ndt.setResolution(ndtresol);
-  ndt.setStepSize(0.5);
+  ndt.setStepSize(0.2);
 #endif
   ndt.setMaximumIterations(40);
   ndt.setTransformationEpsilon(1e-9);
@@ -99,8 +108,8 @@ main(int argc, char* argv[])
   regvis->addCoordinateSystem(0.1);
   regvis->initCameraParameters();
   regvis->setCameraPosition(0, CAM, 0, 0, 0, 0, 0, 0, 1);
-  boost::function<void(
-      const PC&, const std::vector<int>&, const PC&, const std::vector<int>)>
+  std::function<void(
+      const PC&, const std::vector<int>&, const PC&, const std::vector<int>&)>
       callback = [&regvis](const PC& _src,
                            const std::vector<int>& indsrc,
                            const PC& _tgt,
@@ -116,18 +125,20 @@ main(int argc, char* argv[])
             tgt, 0, 255, 0);
         regvis->addPointCloud<pcl::PointXYZ>(tgt, green, "target");
         regvis->spinOnce();
-        boost::this_thread::sleep(boost::posix_time::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
       };
   ndt.registerVisualizationCallback(callback);
 #endif
 
   ndt.align(*aligned, init_guess);
   pcl::transformPointCloud(*filtered2, *aligned, ndt.getFinalTransformation());
+  std::cout << (ndt.hasConverged() ? "converged" : "not converged") << std::endl;
   std::cout << "steps: " << ndt.getFinalNumIteration() << std::endl;
+  std::cout << "proba: " << ndt.getTransformationProbability() << std::endl;
   std::cout << ndt.getFinalTransformation() << std::endl;
 
 #if REGVIS
-  boost::this_thread::sleep(boost::posix_time::milliseconds(2000));
+  std::this_thread::sleep_for(std::chrono::milliseconds(2000));
   regvis.stopDisplay();
 #endif
 
@@ -140,14 +151,14 @@ main(int argc, char* argv[])
     viewer->setCameraPosition(0, CAM, 0, 0, 0, 0, 0, 0, 1);
     // viewer.showCloud(cloud_filtered);
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> red(
-        cloud, 255, 0, 0);
-    viewer->addPointCloud<pcl::PointXYZ>(cloud, red, "cloud1");
+        aligned, 255, 0, 0);
+    viewer->addPointCloud<pcl::PointXYZ>(aligned, red, "cloud1");
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> green(
-        aligned, 0, 255, 0);
-    viewer->addPointCloud<pcl::PointXYZ>(aligned, green, "cloud2");
+        cloud, 0, 255, 0);
+    viewer->addPointCloud<pcl::PointXYZ>(cloud, green, "cloud2");
     while (!viewer->wasStopped()) {
       viewer->spinOnce();
-      boost::this_thread::sleep(boost::posix_time::milliseconds(100));
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
   }
 

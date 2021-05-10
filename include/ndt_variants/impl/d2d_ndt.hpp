@@ -59,20 +59,15 @@ D2DNDT<PointSource, PointTarget>::computeTransformation(PointCloudSource& output
 
   // Update source grid
   updateSource(guess);
+  std::cout << "source_covs " << source_covs_.size() << std::endl;
+  std::cout << "target cells " << target_cells_.getLeafLayout().size() << std::endl;
 
-  // Initialize Point Gradient and Hessian
+  // Initialize Point/Covariance Gradient and Hessian
   point_jacobian_.setZero();
   point_jacobian_.block<3, 3>(0, 0).setIdentity();
   point_hessian_.setZero();
-
-  // Eigen::Transform<float, 3, Eigen::Affine, Eigen::ColMajor> eig_transformation;
-  // eig_transformation.matrix () = final_transformation_;
-
-  // // Convert initial guess matrix to 6 element transformation vector
-  // Eigen::Matrix<double, 6, 1> transform;
-  // Eigen::Vector3f init_translation = eig_transformation.translation ();
-  // Eigen::Vector3f init_rotation = eig_transformation.rotation ().eulerAngles (0, 1,
-  // 2); transform << init_translation.cast<double>(), init_rotation.cast<double>();
+  cov_jacobian_.setZero();
+  cov_hessian_.setZero();
 
   Eigen::Matrix<double, 6, 1> score_gradient;
 
@@ -97,9 +92,9 @@ D2DNDT<PointSource, PointTarget>::computeTransformation(PointCloudSource& output
     double delta_norm = delta.norm();
 
     if (delta_norm == 0 || std::isnan(delta_norm)) {
-      trans_probability_ = score / static_cast<double>(input_->size());
+      trans_probability_ = score / static_cast<double>(trans_covs_.size());
       converged_ = delta_norm == 0;
-      return;
+      break;
     }
 
     delta /= delta_norm;
@@ -146,7 +141,7 @@ D2DNDT<PointSource, PointTarget>::computeTransformation(PointCloudSource& output
   // Store transformation probability.  The realtive differences within each scan
   // registration are accurate but the normalization constants need to be modified for
   // it to be globally accurate
-  trans_probability_ = score / static_cast<double>(input_->size());
+  trans_probability_ = score / static_cast<double>(trans_covs_.size());
 }
 
 template <typename PointSource, typename PointTarget>
@@ -173,22 +168,52 @@ D2DNDT<PointSource, PointTarget>::computeDerivatives(
     target_cells_.nearestKSearch(x_trans_pt, 1, neighborhood, distances);
 
     for (const auto& cell : neighborhood) {
-      computeLocalDerivatives(x_trans);
+      computeLocalDerivatives(x_trans, x_trans_cov);
       auto x_diff = x_trans - cell->getMean();
       auto c_inv = (cell->getCov() + x_trans_cov).inverse();
       score +=
           updateDerivatives(score_gradient, hessian, x_diff, c_inv, compute_hessian);
     }
   }
+  std::cout << "[computeDerivatives] " << score << std::endl;
   return score;
 }
 
 template <typename PointSource, typename PointTarget>
 void
 D2DNDT<PointSource, PointTarget>::computeLocalDerivatives(const Eigen::Vector3d& x,
+                                                          const Eigen::Matrix3d& cov,
                                                           bool compute_hessian)
 {
+  // d/dp (Rx)|R=I, p is an element of rotation vector
+  // = G x  ...  G is the generator corresponding to p
   point_jacobian_.block<3, 3>(0, 3) = computeWedge(x(0), x(1), x(2)) * (-1);
+  // d/dp (RCR^T)|R=I, C is cov
+  // = (d/dp R)|R=I CI + IC (d/dp R^T)|R=I
+  // = GC + (GC)^T  ...  C = C^T
+  {
+    Eigen::Matrix3d Gcov, GcovT;
+    Gcov <<
+      0, 0, 0,
+      -cov(0,2), -cov(1,2), -cov(2,2),
+       cov(0,1),  cov(1,1),  cov(1,2);
+    GcovT = Gcov.transpose();
+    cov_jacobian_.block<3, 3>(0, 9) = Gcov + GcovT;
+
+    Gcov <<
+      cov(0,2), cov(1,2), cov(2,2),
+      0, 0, 0,
+      -cov(0,0), -cov(0,1), -cov(0,2);
+    GcovT = Gcov.transpose();
+    cov_jacobian_.block<3, 3>(0, 12) = Gcov + GcovT;
+
+    Gcov <<
+      -cov(0,1), -cov(1,1), -cov(1,2),
+      cov(0,0), cov(0,1), cov(0,2),
+      0, 0, 0;
+    GcovT = Gcov.transpose();
+    cov_jacobian_.block<3, 3>(0, 15) = Gcov + GcovT;
+  }
 
   if (compute_hessian) {
     // Calculate second derivative of Transformation Equation 6.17 w.r.t. transform
@@ -196,6 +221,7 @@ D2DNDT<PointSource, PointTarget>::computeLocalDerivatives(const Eigen::Vector3d&
     // to the 3x1 block matrix starting at (3i,j), Equation 6.20 and 6.21 [Magnusson
     // 2009]
 
+    // d^2/dpdq (Rx) = (GpGq + GqGp)/2 x
     Eigen::Vector3d xy, yz, zx, xx, yy, zz;
     xy << x(1), x(0), 0;
     yz << 0, x(2), x(1);
@@ -216,6 +242,39 @@ D2DNDT<PointSource, PointTarget>::computeLocalDerivatives(const Eigen::Vector3d&
     point_hessian_.block<3, 1>(9, 5) = zx / 2;
     point_hessian_.block<3, 1>(12, 5) = yz / 2;
     point_hessian_.block<3, 1>(15, 5) = zz;
+
+    // d^2/dpdq (RCR^T)
+    // = (d^2/dpdq R) C R^T +
+    //   (d/dp R) C (d/dq R^T) + (d/dq R) C (d/dp R^T) +
+    //   R C (d^2/dpdq R^T)
+    // d^2/dpdq (R C R^T)|R=I
+    // = (GpGq + GqGp)/2 C + Gp C Gq^T + Gq C Gp^T + ((GpGq + GqGp)/2 C)^T
+    // = (GpGq + GqGp)/2 C + Gp C Gq^T + (Gp C Gq^T)^T + ((GpGq + GqGp)/2 C)^T
+    // ... maybe?
+    Eigen::Matrix3d Gen[3];
+    Gen[0] <<
+      0, 0, 0,
+      0, 0, -1,
+      0, 1, 0;
+    Gen[1] <<
+      0, 0, 1,
+      0, 0, 0,
+      -1, 0, 0;
+    Gen[2] <<
+      0, -1, 0,
+      1, 0, 0,
+      0, 0, 0;
+    for (int i=0; i<3; i++) {
+      for (int j=i; j<3; j++) {
+        Eigen::Matrix3d block =
+          (Gen[i] * Gen[j] + Gen[j] * Gen[i])/2 * cov
+          + Gen[i] * cov * Gen[j].transpose();
+        cov_hessian_.block<3, 3>(9+3*i, 9+3*j) = block + block.transpose();
+      }
+    }
+    cov_hessian_.block<3, 3>(12, 9) = cov_hessian_.block<3, 3>(9, 12);
+    cov_hessian_.block<3, 3>(15, 9) = cov_hessian_.block<3, 3>(9, 15);
+    cov_hessian_.block<3, 3>(15, 12) = cov_hessian_.block<3, 3>(12, 15);
   }
 }
 
@@ -228,10 +287,11 @@ D2DNDT<PointSource, PointTarget>::updateDerivatives(
     const Eigen::Matrix3d& c_inv,
     bool compute_hessian) const
 {
-  // e^(-d_2/2 * (x_k - mu_k)^T Sigma_k^-1 (x_k - mu_k)) Equation 6.9 [Magnusson 2009]
+  // e^(-d_2/2 * mu_{ij}^T (R^T Sigma_i R + Sigma_j)^{-1} mu_{ij})
+  // Equation 18 [Stoyanov et al. 2012]
   double e_x_cov_x = std::exp(-gauss_d2_ * x_trans.dot(c_inv * x_trans) / 2);
-  // Calculate probability of transtormed points existance, Equation 6.9 [Magnusson
-  // 2009]
+  // Calculate probability of transtormed points existance,
+  // Equation 18 [Stoyanov et al. 2012]
   const double score_inc = -gauss_d1_ * e_x_cov_x;
 
   e_x_cov_x = gauss_d2_ * e_x_cov_x;
@@ -240,25 +300,36 @@ D2DNDT<PointSource, PointTarget>::updateDerivatives(
   if (e_x_cov_x > 1 || e_x_cov_x < 0 || std::isnan(e_x_cov_x))
     return 0;
 
-  // Reusable portion of Equation 6.12 and 6.13 [Magnusson 2009]
-  e_x_cov_x *= gauss_d1_;
+  // Reusable portion of Equation 20 and 24 [Stoyanov et al. 2012]
+  // d_1 d_2 exp(...)
+  e_x_cov_x = e_x_cov_x * gauss_d1_;
 
   for (int i = 0; i < 6; i++) {
-    // Sigma_k^-1 d(T(x,p))/dpi, Reusable portion of Equation 6.12 and 6.13 [Magnusson
-    // 2009]
-    const Eigen::Vector3d cov_dxd_pi = c_inv * point_jacobian_.col(i);
-
-    // Update gradient, Equation 6.12 [Magnusson 2009]
-    score_gradient(i) += x_trans.dot(cov_dxd_pi) * e_x_cov_x;
+    // B j_a, Reusable portion of Equation 20 and 24 [Stoyanov et al. 2012]
+    const Eigen::Vector3d BJ = c_inv * point_jacobian_.col(i);
+    const double xtBJ = x_trans.dot(BJ);
+    const Eigen::Matrix3d BZiB = c_inv * cov_jacobian_.block<3, 3>(0, 3*i) * c_inv;
+    const double xtBZiBx = x_trans.dot( BZiB * x_trans );
+    const double qi = 2 * xtBJ - xtBZiBx;
+    // Update gradient, Equation 20 [Stoyanov et al. 2012]
+    score_gradient(i) += qi * e_x_cov_x / 2;
 
     if (compute_hessian) {
       for (int j = 0; j < hessian.cols(); j++) {
-        // Update hessian, Equation 6.13 [Magnusson 2009]
+        // Update hessian, Equation 24 [Stoyanov et al. 2012]
+        const double xtBJj = x_trans.dot(c_inv * point_jacobian_.col(j));
+        const double xtBZjBx = x_trans.dot( c_inv * cov_jacobian_.block<3, 3>(0, 3*j) * c_inv * x_trans );
+        const double qj = 2 * xtBJj - xtBZjBx;
         hessian(i, j) +=
-            e_x_cov_x * (-gauss_d2_ * x_trans.dot(cov_dxd_pi) *
-                             x_trans.dot(c_inv * point_jacobian_.col(j)) +
-                         x_trans.dot(c_inv * point_hessian_.block<3, 1>(3 * i, j)) +
-                         point_jacobian_.col(j).dot(cov_dxd_pi));
+            e_x_cov_x * (2 * point_jacobian_.col(j).dot(BJ)
+                        - 2 * x_trans.dot( c_inv * cov_jacobian_.block<3, 3>(0, 3*j) * BJ )
+                        + 2 * x_trans.dot( c_inv * point_hessian_.block<3, 1>(3*i, j) )
+                        - 2 * x_trans.dot( BZiB * point_jacobian_.col(j) )
+                        + x_trans.dot( BZiB * cov_jacobian_.block<3, 3>(0, 3*j) * c_inv * x_trans )
+                        + x_trans.dot( c_inv * cov_jacobian_.block<3, 3>(0, 3*j) * BZiB * x_trans )
+                        - x_trans.dot( c_inv * cov_hessian_.block<3, 3>(3*i, 3*j) * c_inv * x_trans )
+                        - gauss_d2_ * qi * qj / 2
+                        );
       }
     }
   }
@@ -272,13 +343,6 @@ D2DNDT<PointSource, PointTarget>::computeHessian(Eigen::Matrix<double, 6, 6>& he
 {
   hessian.setZero();
 
-  // Original Point and Transformed Point
-  // PointSource x_trans_pt;
-  // Original Point and Transformed Point (for math)
-  // Eigen::Vector3d x_trans;
-  // Occupied Voxel
-  // TargetGridLeafConstPtr cell;
-  // Inverse Covariance of Occupied Voxel
   Eigen::Matrix3d c_inv;
 
   // Precompute Angular Derivatives unessisary because only used after regular
@@ -297,17 +361,18 @@ D2DNDT<PointSource, PointTarget>::computeHessian(Eigen::Matrix<double, 6, 6>& he
     target_cells_.nearestKSearch(x_trans_pt, 1, neighborhood, distances);
 
     for (const auto& cell : neighborhood) {
-      // Compute derivative of transform function w.r.t. transform vector, J_E and H_E
-      // in Equations 6.18 and 6.20 [Magnusson 2009]
-      computeLocalDerivatives(x_trans);
+      // Compute derivative of transform function w.r.t. transform vector,
+      // j_a, Z_a, H_{ab} and Z_{ab}
+      // in Equations 22, 23, 25 and 26 [Stoyanov et al. 2012]
+      computeLocalDerivatives(x_trans, x_trans_cov);
 
-      // Denorm point, x_k' in Equations 6.12 and 6.13 [Magnusson 2009]
+      // Denorm point, mu_{ij} in Equations 19 [Stoyanov et al. 2012]
       auto x_diff = x_trans - cell->getMean();
       // Uses precomputed covariance for speed.
       c_inv = (cell->getCov() + x_trans_cov).inverse();
 
-      // Update hessian, lines 21 in Algorithm 2, according to Equations 6.10, 6.12
-      // and 6.13, respectively [Magnusson 2009]
+      // Update hessian, according to Equations 24-27,
+      // respectively [Stoyanov et al. 2012]
       updateHessian(hessian, x_diff, c_inv);
     }
   }
@@ -318,30 +383,42 @@ D2DNDT<PointSource, PointTarget>::updateHessian(Eigen::Matrix<double, 6, 6>& hes
                                                 const Eigen::Vector3d& x_trans,
                                                 const Eigen::Matrix3d& c_inv) const
 {
-  // e^(-d_2/2 * (x_k - mu_k)^T Sigma_k^-1 (x_k - mu_k)) Equation 6.9 [Magnusson 2009]
+  // e^(-d_2/2 * mu_{ij}^T (R^T Sigma_i R + Sigma_j)^{-1} mu_{ij})
+  // Equation 18 [Stoyanov et al. 2012]
   double e_x_cov_x =
       gauss_d2_ * std::exp(-gauss_d2_ * x_trans.dot(c_inv * x_trans) / 2);
 
   // Error checking for invalid values.
-  if (e_x_cov_x > 1 || e_x_cov_x < 0 || std::isnan(e_x_cov_x)) {
+  if (e_x_cov_x > 1 || e_x_cov_x < 0 || std::isnan(e_x_cov_x))
     return;
-  }
 
-  // Reusable portion of Equation 6.12 and 6.13 [Magnusson 2009]
-  e_x_cov_x *= gauss_d1_;
+  // Reusable portion of Equation 20 and 24 [Stoyanov et al. 2012]
+  // d_1 d_2 exp(...)
+  e_x_cov_x = e_x_cov_x * gauss_d1_;
 
   for (int i = 0; i < 6; i++) {
-    // Sigma_k^-1 d(T(x,p))/dpi, Reusable portion of Equation 6.12 and 6.13 [Magnusson
-    // 2009]
-    const Eigen::Vector3d cov_dxd_pi = c_inv * point_jacobian_.col(i);
+    // B j_a, Reusable portion of Equation 20 and 24 [Stoyanov et al. 2012]
+    const Eigen::Vector3d BJ = c_inv * point_jacobian_.col(i);
+    const double xtBJ = x_trans.dot(BJ);
+    const Eigen::Matrix3d BZiB = c_inv * cov_jacobian_.block<3, 3>(0, 3*i) * c_inv;
+    const double xtBZiBx = x_trans.dot( BZiB * x_trans );
+    const double qi = 2 * xtBJ - xtBZiBx;
 
-    for (Eigen::Index j = 0; j < hessian.cols(); j++) {
-      // Update hessian, Equation 6.13 [Magnusson 2009]
+    for (int j = 0; j < hessian.cols(); j++) {
+      // Update hessian, Equation 24 [Stoyanov et al. 2012]
+      const double xtBJj = x_trans.dot(c_inv * point_jacobian_.col(j));
+      const double xtBZjBx = x_trans.dot( c_inv * cov_jacobian_.block<3, 3>(0, 3*j) * c_inv * x_trans );
+      const double qj = 2 * xtBJj - xtBZjBx;
       hessian(i, j) +=
-          e_x_cov_x * (-gauss_d2_ * x_trans.dot(cov_dxd_pi) *
-                           x_trans.dot(c_inv * point_jacobian_.col(j)) +
-                       x_trans.dot(c_inv * point_hessian_.block<3, 1>(3 * i, j)) +
-                       point_jacobian_.col(j).dot(cov_dxd_pi));
+          e_x_cov_x * (2 * point_jacobian_.col(j).dot(BJ)
+                      - 2 * x_trans.dot( c_inv * cov_jacobian_.block<3, 3>(0, 3*j) * BJ )
+                      + 2 * x_trans.dot( c_inv * point_hessian_.block<3, 1>(3*i, j) )
+                      - 2 * x_trans.dot( BZiB * point_jacobian_.col(j) )
+                      + x_trans.dot( BZiB * cov_jacobian_.block<3, 3>(0, 3*j) * c_inv * x_trans )
+                      + x_trans.dot( c_inv * cov_jacobian_.block<3, 3>(0, 3*j) * BZiB * x_trans )
+                      - x_trans.dot( c_inv * cov_hessian_.block<3, 3>(3*i, 3*j) * c_inv * x_trans )
+                      - gauss_d2_ * qi * qj / 2
+                      );
     }
   }
 }
