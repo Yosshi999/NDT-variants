@@ -15,6 +15,7 @@ D2DNDT<PointSource, PointTarget>::D2DNDT()
 , gauss_d1_()
 , gauss_d2_()
 , trans_probability_()
+, visualize_only_centers_(true)
 {
   reg_name_ = "D2DNDT";
 
@@ -112,8 +113,19 @@ D2DNDT<PointSource, PointTarget>::computeTransformation(PointCloudSource& output
     // transform += delta;
 
     // Update Visualizer (untested)
-    if (update_visualizer_)
-      update_visualizer_(output, std::vector<int>(), *target_, std::vector<int>());
+    if (update_visualizer_) {
+      if (visualize_only_centers_) {
+        PointCloud<PointXYZ> trans_means_pc;
+        for (const auto& v : trans_means_) {
+          trans_means_pc.push_back(PointXYZ{v[0], v[1], v[2]});
+        }
+        update_visualizer_(trans_means_pc, std::vector<int>(), *target_, std::vector<int>());
+      } else {
+        PointCloudSource current_trans;
+        transformPointCloud(*input_, current_trans, final_transformation_);
+        update_visualizer_(current_trans, std::vector<int>(), *target_, std::vector<int>());
+      }
+    }
 
     const double cos_angle =
         0.5 * transformation_.template block<3, 3>(0, 0).trace() - 1;

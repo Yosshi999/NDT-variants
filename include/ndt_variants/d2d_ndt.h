@@ -90,6 +90,21 @@ public:
     return nr_iterations_;
   }
 
+  /** \brief Flag for visualizing only centers of the moving pointcloud.
+   * Default is true. If false, it will take a bit more computing cost.
+   */
+  inline void
+  setVisualizeOnlyCentersFlag(bool flag)
+  {
+    visualize_only_centers_ = flag;
+  }
+
+  inline bool
+  getVisualizeOnlyCentersFlag() const
+  {
+    return visualize_only_centers_;
+  }
+
   static inline Eigen::Matrix3d
   computeWedge(double x, double y, double z)
   {
@@ -396,6 +411,11 @@ protected:
   /** \brief The probability score of the transform applied to the input cloud,
    * Equation 18 [Stoyanov et al. 2012]. */
   double trans_probability_;
+
+  /** \brief Flag for visualizing only centers of the moving pointcloud.
+   * Default is true. If false, it will take a bit more computing cost.
+   */
+  bool visualize_only_centers_;
 
   /** \brief The first order derivative of the transformation of a point w.r.t. the
    * transform vector, \f$ J_a \f$ in Equation 22 [Stoyanov et al. 2012]. */
