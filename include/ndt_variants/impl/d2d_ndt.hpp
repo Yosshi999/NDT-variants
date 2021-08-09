@@ -51,15 +51,15 @@ D2DNDT<PointSource, PointTarget>::computeTransformation(PointCloudSource& output
       -2 * std::log((-std::log(gauss_c1 * std::exp(-0.5) + gauss_c2) - gauss_d3) /
                     gauss_d1_);
 
+  // Initialise final transformation to the guessed one
+  final_transformation_ = guess;
   if (guess != Eigen::Matrix4f::Identity()) {
-    // Initialise final transformation to the guessed one
-    final_transformation_ = guess;
     // Apply guessed transformation prior to search for neighbours
     transformPointCloud(output, output, guess);
+    // Update source grid
+    updateSource(guess);
   }
 
-  // Update source grid
-  updateSource(guess);
 
   // Initialize Point/Covariance Gradient and Hessian
   point_jacobian_.setZero();
