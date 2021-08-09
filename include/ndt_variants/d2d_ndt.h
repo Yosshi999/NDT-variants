@@ -242,7 +242,7 @@ protected:
     Eigen::Matrix3d rot = mat.block<3, 3>(0, 0).template cast<double>();
     Eigen::Vector3d tl = mat.block<3, 1>(0, 3).template cast<double>();
     for (size_t i = 0; i < source_covs_.size(); i++) {
-      trans_covs_.at(i) = rot.transpose() * source_covs_.at(i) * rot;
+      trans_covs_.at(i) = rot * source_covs_.at(i) * rot.transpose();
       trans_means_.at(i) = rot * source_means_.at(i) + tl;
     }
   }
