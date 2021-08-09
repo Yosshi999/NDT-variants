@@ -23,6 +23,7 @@ constexpr float pc_scaling = 2.0f;
 constexpr double approxleaf = 0.02;
 constexpr double ndtresol = 0.04;
 constexpr float noise_scale = 0.002f;
+constexpr bool visualize_only_centers = false;
 
 int
 main(int argc, char* argv[])
@@ -96,6 +97,7 @@ main(int argc, char* argv[])
   ndt.setResolution(ndtresol);
   ndt.setStepSize(0.5);
   ndt.setInputSource(cloud2);
+  ndt.setVisualizeOnlyCentersFlag(visualize_only_centers);
 #else
   pcl::NormalDistributionsTransform<pcl::PointXYZ, pcl::PointXYZ> ndt;
   ndt.setResolution(ndtresol);
