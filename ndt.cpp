@@ -19,16 +19,24 @@ using PC = pcl::PointCloud<pcl::PointXYZ>;
 using PPC = pcl::PointCloud<pcl::PointXYZ>::Ptr;
 using CPPC = pcl::PointCloud<pcl::PointXYZ>::ConstPtr;
 constexpr int CAM = 1;
+constexpr float pc_scaling = 2.0f;
 constexpr double approxleaf = 0.02;
 constexpr double ndtresol = 0.04;
-constexpr bool apply_noise = false;
-constexpr float noise_scale = 0.01f;
+constexpr float noise_scale = 0.002f;
 
 int
 main(int argc, char* argv[])
 {
+  if (argc != 2) {
+    std::cout << "Usage: " << argv[0] << " <path to pointcloud>" << std::endl;
+    return 0;
+  }
   PPC cloud(new PC);
   pcl::io::load(argv[1], *cloud);
+  pcl::transformPointCloud(
+    *cloud,
+    *cloud,
+    static_cast<Eigen::Affine3f>(Eigen::Scaling(pc_scaling)).matrix());
   pcl::PointXYZ minPt, maxPt;
   pcl::getMinMax3D(*cloud, minPt, maxPt);
   std::cout << "x size: " << maxPt.x - minPt.x << std::endl;
@@ -38,7 +46,7 @@ main(int argc, char* argv[])
   PPC cloud2(new PC);
   pcl::copyPointCloud(*cloud, *cloud2);
 
-  if (apply_noise) {
+  if (noise_scale > 0) {
     std::default_random_engine gen(0);
     std::normal_distribution<float> dist(-noise_scale, noise_scale);
     for (auto& pt : cloud2->points) {
@@ -86,16 +94,17 @@ main(int argc, char* argv[])
 #if 1
   pclex::D2DNDT<pcl::PointXYZ, pcl::PointXYZ> ndt;
   ndt.setResolution(ndtresol);
-  ndt.setStepSize(0.2);
+  ndt.setStepSize(0.5);
+  ndt.setInputSource(cloud2);
 #else
   pcl::NormalDistributionsTransform<pcl::PointXYZ, pcl::PointXYZ> ndt;
   ndt.setResolution(ndtresol);
   ndt.setStepSize(0.2);
+  ndt.setInputSource(filtered2);
 #endif
-  ndt.setMaximumIterations(40);
-  ndt.setTransformationEpsilon(1e-9);
-  ndt.setTransformationRotationEpsilon(0);
-  ndt.setInputSource(cloud2);
+  ndt.setMaximumIterations(50);
+  ndt.setTransformationEpsilon(1e-7);
+  ndt.setTransformationRotationEpsilon(1e-7);
   ndt.setInputTarget(cloud);
 
 #if REGVIS
@@ -111,9 +120,9 @@ main(int argc, char* argv[])
   std::function<void(
       const PC&, const std::vector<int>&, const PC&, const std::vector<int>&)>
       callback = [&regvis](const PC& _src,
-                           const std::vector<int>& indsrc,
+                           const std::vector<int>&/*indsrc*/,
                            const PC& _tgt,
-                           const std::vector<int>& indtgt) {
+                           const std::vector<int>&/*indtgt*/) {
         PPC src(new PC), tgt(new PC);
         pcl::copyPointCloud(_src, *src);
         pcl::copyPointCloud(_tgt, *tgt);
@@ -131,7 +140,7 @@ main(int argc, char* argv[])
 #endif
 
   ndt.align(*aligned, init_guess);
-  pcl::transformPointCloud(*filtered2, *aligned, ndt.getFinalTransformation());
+  pcl::transformPointCloud(*cloud2, *aligned, ndt.getFinalTransformation());
   std::cout << (ndt.hasConverged() ? "converged" : "not converged") << std::endl;
   std::cout << "steps: " << ndt.getFinalNumIteration() << std::endl;
   std::cout << "proba: " << ndt.getTransformationProbability() << std::endl;

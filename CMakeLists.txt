@@ -6,7 +6,7 @@ find_package(PCL 1.11 REQUIRED)
 include_directories(${PCL_INCLUDE_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 link_directories(${PCL_LIBRARY_DIRS})
-add_compile_options(-Wall -O3)
+add_compile_options(-Wall -Wextra -O3)
 
 add_executable(voxel_grid_filter voxel_grid_filter.cpp)
 add_executable(ndt ndt.cpp)
