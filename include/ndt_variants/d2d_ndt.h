@@ -155,6 +155,18 @@ public:
     return min_points_per_voxel_;
   }
 
+  inline void
+  setNeighborPoints(int neighbor_points)
+  {
+    neighbor_points_ = neighbor_points;
+  }
+
+  inline int
+  getNeighborPoints()
+  {
+    return neighbor_points_;
+  }
+
 protected:
   using Parent::converged_;
   using Parent::corr_dist_threshold_;
@@ -373,6 +385,9 @@ protected:
    * [Magnusson 2009]. */
   double outlier_ratio_;
   int min_points_per_voxel_;
+
+  /** \brief The number of points in searching nearest neighborhoods. */
+  int neighbor_points_;
 
   /** \brief The normalization constants used fit the point distribution to a normal
    * distribution, Equation 18 [Stoyanov et al. 2012]. */

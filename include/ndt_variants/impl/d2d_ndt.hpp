@@ -11,6 +11,7 @@ D2DNDT<PointSource, PointTarget>::D2DNDT()
 , step_size_(0.1)
 , outlier_ratio_(0.55)
 , min_points_per_voxel_(6)
+, neighbor_points_(2)
 , gauss_d1_()
 , gauss_d2_()
 , trans_probability_()
@@ -163,7 +164,7 @@ D2DNDT<PointSource, PointTarget>::computeDerivatives(
     std::vector<TargetGridLeafConstPtr> neighborhood;
     std::vector<float> distances;
     // target_cells_.radiusSearch (x_trans_pt, resolution_, neighborhood, distances);
-    target_cells_.nearestKSearch(x_trans_pt, 1, neighborhood, distances);
+    target_cells_.nearestKSearch(x_trans_pt, neighbor_points_, neighborhood, distances);
 
     computeLocalDerivatives(x_trans, x_trans_cov);
     for (const auto& cell : neighborhood) {
@@ -353,7 +354,7 @@ D2DNDT<PointSource, PointTarget>::computeHessian(Eigen::Matrix<double, 6, 6>& he
     std::vector<TargetGridLeafConstPtr> neighborhood;
     std::vector<float> distances;
     // target_cells_.radiusSearch (x_trans_pt, resolution_, neighborhood, distances);
-    target_cells_.nearestKSearch(x_trans_pt, 1, neighborhood, distances);
+    target_cells_.nearestKSearch(x_trans_pt, neighbor_points_, neighborhood, distances);
 
     for (const auto& cell : neighborhood) {
       // Compute derivative of transform function w.r.t. transform vector,
