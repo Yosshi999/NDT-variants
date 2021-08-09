@@ -106,8 +106,9 @@ public:
     double norm = v.norm();
     v.normalize();
     Eigen::Matrix3d wedge = computeWedge(v(0), v(1), v(2));
-    auto mat = cos(norm) * Eigen::Matrix3d::Identity() + (1 - cos(norm)) * v * v.transpose() +
-               sin(norm) * wedge;
+    Eigen::Matrix3d mat = cos(norm) * Eigen::Matrix3d::Identity() +
+                          (1 - cos(norm)) * v * v.transpose() +
+                          sin(norm) * wedge;
     return mat;
   }
 
@@ -189,7 +190,6 @@ protected:
   /** \brief Initiate covariance voxel structure for the target. */
   void inline init()
   {
-    std::cout << "[init] target points: " << target_->size() << std::endl;
     target_cells_.setLeafSize(resolution_, resolution_, resolution_);
     target_cells_.setInputCloud(target_);
     target_cells_.setMinPointPerVoxel(min_points_per_voxel_);

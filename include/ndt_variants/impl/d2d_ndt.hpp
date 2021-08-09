@@ -59,8 +59,6 @@ D2DNDT<PointSource, PointTarget>::computeTransformation(PointCloudSource& output
 
   // Update source grid
   updateSource(guess);
-  std::cout << "source_covs " << source_covs_.size() << std::endl;
-  std::cout << "target cells " << target_cells_.getLeafLayout().size() << std::endl;
 
   // Initialize Point/Covariance Gradient and Hessian
   point_jacobian_.setZero();
@@ -167,15 +165,14 @@ D2DNDT<PointSource, PointTarget>::computeDerivatives(
     // target_cells_.radiusSearch (x_trans_pt, resolution_, neighborhood, distances);
     target_cells_.nearestKSearch(x_trans_pt, 1, neighborhood, distances);
 
+    computeLocalDerivatives(x_trans, x_trans_cov);
     for (const auto& cell : neighborhood) {
-      computeLocalDerivatives(x_trans, x_trans_cov);
-      auto x_diff = x_trans - cell->getMean();
-      auto c_inv = (cell->getCov() + x_trans_cov).inverse();
+      const Eigen::Vector3d x_diff = x_trans - cell->getMean();
+      const Eigen::Matrix3d c_inv = (cell->getCov() + x_trans_cov).inverse();
       score +=
           updateDerivatives(score_gradient, hessian, x_diff, c_inv, compute_hessian);
     }
   }
-  std::cout << "[computeDerivatives] " << score << std::endl;
   return score;
 }
 
@@ -185,7 +182,7 @@ D2DNDT<PointSource, PointTarget>::computeLocalDerivatives(const Eigen::Vector3d&
                                                           const Eigen::Matrix3d& cov,
                                                           bool compute_hessian)
 {
-  // d/dp (Rx)|R=I, p is an element of rotation vector
+  // d/dp (Rx + t)|R=I, p is an element of rotation vector
   // = G x  ...  G is the generator corresponding to p
   point_jacobian_.block<3, 3>(0, 3) = computeWedge(x(0), x(1), x(2)) * (-1);
   // d/dp (RCR^T)|R=I, C is cov
@@ -343,8 +340,6 @@ D2DNDT<PointSource, PointTarget>::computeHessian(Eigen::Matrix<double, 6, 6>& he
 {
   hessian.setZero();
 
-  Eigen::Matrix3d c_inv;
-
   // Precompute Angular Derivatives unessisary because only used after regular
   // derivative calculation Update hessian for each point, line 17 in Algorithm 2
   // [Magnusson 2009]
@@ -367,9 +362,9 @@ D2DNDT<PointSource, PointTarget>::computeHessian(Eigen::Matrix<double, 6, 6>& he
       computeLocalDerivatives(x_trans, x_trans_cov);
 
       // Denorm point, mu_{ij} in Equations 19 [Stoyanov et al. 2012]
-      auto x_diff = x_trans - cell->getMean();
+      const Eigen::Vector3d x_diff = x_trans - cell->getMean();
       // Uses precomputed covariance for speed.
-      c_inv = (cell->getCov() + x_trans_cov).inverse();
+      const Eigen::Matrix3d c_inv = (cell->getCov() + x_trans_cov).inverse();
 
       // Update hessian, according to Equations 24-27,
       // respectively [Stoyanov et al. 2012]
