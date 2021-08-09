@@ -603,6 +603,7 @@ D2DNDT<PointSource, PointTarget>::computeStepLengthMT(
   a_t = std::min(a_t, step_max);
   a_t = std::max(a_t, step_min);
 
+  Eigen::Matrix4f saved_final_transformation = final_transformation_;
   updateTransform(step_dir * a_t, final_transformation_);
 
   // new transformed source
@@ -642,6 +643,7 @@ D2DNDT<PointSource, PointTarget>::computeStepLengthMT(
     a_t = std::min(a_t, step_max);
     a_t = std::max(a_t, step_min);
 
+    final_transformation_ = saved_final_transformation;
     updateTransform(step_dir * a_t, final_transformation_);
 
     // new transformed source
