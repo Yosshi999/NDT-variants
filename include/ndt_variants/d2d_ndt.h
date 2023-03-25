@@ -10,14 +10,17 @@
 namespace pclex {
 using namespace pcl;
 
-template <typename PointSource, typename PointTarget>
-class D2DNDT : public Registration<PointSource, PointTarget> {
+template <typename PointSource, typename PointTarget, typename Scalar = float>
+class D2DNDT : public Registration<PointSource, PointTarget, Scalar> {
 protected:
-  using Parent = Registration<PointSource, PointTarget>;
+  using Parent = Registration<PointSource, PointTarget, Scalar>;
 
   using PointCloudSource = typename Parent::PointCloudSource;
+  using PointCloudSourcePtr = typename PointCloudSource::Ptr;
+  using PointCloudSourceConstPtr = typename PointCloudSource::ConstPtr;
 
   using PointCloudTarget = typename Parent::PointCloudTarget;
+  using PointCloudTargetPtr = typename PointCloudTarget::Ptr;
   using PointCloudTargetConstPtr = typename PointCloudTarget::ConstPtr;
 
   using SourceGrid = VoxelGridCovariance<PointSource>;
@@ -26,8 +29,11 @@ protected:
   using TargetGridLeafConstPtr = typename TargetGrid::LeafConstPtr;
 
 public:
-  using Ptr = shared_ptr<D2DNDT<PointSource, PointTarget>>;
-  using ConstPtr = shared_ptr<const D2DNDT<PointSource, PointTarget>>;
+  using Ptr = shared_ptr<D2DNDT<PointSource, PointTarget, Scalar>>;
+  using ConstPtr = shared_ptr<const D2DNDT<PointSource, PointTarget, Scalar>>;
+  using Vector3 = typename Eigen::Matrix<Scalar, 3, 1>;
+  using Matrix4 = typename Parent::Matrix4;
+  using Affine3 = typename Eigen::Transform<Scalar, 3, Eigen::Affine>;
 
   /** \brief Constructor.
    * Sets outlier_ratio_ to 0.55, step_size_ to 0.1 and resolution_ to 1.0
@@ -132,10 +138,10 @@ public:
    * \param[out] trans affine transform corresponding to given transformation vector
    */
   static void
-  convertTransform(const Eigen::Matrix<double, 6, 1>& x, Eigen::Affine3f& trans)
+  convertTransform(const Eigen::Matrix<double, 6, 1>& x, Affine3& trans)
   {
-    trans = Eigen::Translation<float, 3>(float(x(0)), float(x(1)), float(x(2))) *
-            computeExpWedge(x(3), x(4), x(5)).cast<float>();
+    trans = Eigen::Translation<Scalar, 3>(x.head<3>().cast<Scalar>()) *
+            computeExpWedge(x(3), x(4), x(5)).cast<Scalar>();
   }
 
   /** \brief Convert 6 element transformation vector to transformation matrix.
@@ -143,17 +149,17 @@ public:
    * \param[out] trans affine transform corresponding to given transformation vector
    */
   static void
-  convertTransform(const Eigen::Matrix<double, 6, 1>& x, Eigen::Matrix4f& trans)
+  convertTransform(const Eigen::Matrix<double, 6, 1>& x, Matrix4& trans)
   {
-    Eigen::Affine3f _affine;
+    Affine3 _affine;
     convertTransform(x, _affine);
     trans = _affine.matrix();
   }
 
   static void
-  updateTransform(const Eigen::Matrix<double, 6, 1>& x, Eigen::Matrix4f& trans)
+  updateTransform(const Eigen::Matrix<double, 6, 1>& x, Matrix4& trans)
   {
-    Eigen::Matrix4f delta;
+    Matrix4 delta;
     convertTransform(x, delta);
     trans = delta * trans;
   }
@@ -208,11 +214,11 @@ protected:
   virtual void
   computeTransformation(PointCloudSource& output)
   {
-    computeTransformation(output, Eigen::Matrix4f::Identity());
+    computeTransformation(output, Matrix4::Identity());
   }
 
   void
-  computeTransformation(PointCloudSource& output, const Eigen::Matrix4f& guess) override;
+  computeTransformation(PointCloudSource& output, const Matrix4& guess) override;
 
   /** \brief Initiate covariance voxel structure for the target. */
   void inline init()
@@ -251,11 +257,11 @@ protected:
   }
 
   /** \brief Update the position and orientation of the source cloud. */
-  void inline updateSource(const Eigen::Matrix4f& mat)
+  void inline updateSource(const Matrix4& mat)
   {
     // std::cout << mat << std::endl;
-    Eigen::Matrix3d rot = mat.block<3, 3>(0, 0).template cast<double>();
-    Eigen::Vector3d tl = mat.block<3, 1>(0, 3).template cast<double>();
+    Eigen::Matrix3d rot = mat.template block<3, 3>(0, 0).template cast<double>();
+    Eigen::Vector3d tl = mat.template block<3, 1>(0, 3).template cast<double>();
     for (size_t i = 0; i < source_covs_.size(); i++) {
       trans_covs_.at(i) = rot * source_covs_.at(i) * rot.transpose();
       trans_means_.at(i) = rot * source_means_.at(i) + tl;

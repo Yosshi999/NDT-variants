@@ -4,8 +4,8 @@
 namespace pclex {
 using namespace pcl;
 
-template <typename PointSource, typename PointTarget>
-D2DNDT<PointSource, PointTarget>::D2DNDT()
+template <typename PointSource, typename PointTarget, typename Scalar>
+D2DNDT<PointSource, PointTarget, Scalar>::D2DNDT()
 : target_cells_()
 , resolution_(1.0f)
 , step_size_(0.1)
@@ -32,10 +32,10 @@ D2DNDT<PointSource, PointTarget>::D2DNDT()
   max_iterations_ = 35;
 }
 
-template <typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget, typename Scalar>
 void
-D2DNDT<PointSource, PointTarget>::computeTransformation(PointCloudSource& output,
-                                                        const Eigen::Matrix4f& guess)
+D2DNDT<PointSource, PointTarget, Scalar>::computeTransformation(
+    PointCloudSource& output, const Matrix4& guess)
 {
   // Initialize source grid
   initSource();
@@ -54,7 +54,7 @@ D2DNDT<PointSource, PointTarget>::computeTransformation(PointCloudSource& output
 
   // Initialise final transformation to the guessed one
   final_transformation_ = guess;
-  if (guess != Eigen::Matrix4f::Identity()) {
+  if (guess != Matrix4::Identity()) {
     // Apply guessed transformation prior to search for neighbours
     transformPointCloud(output, output, guess);
     // Update source grid
@@ -155,9 +155,9 @@ D2DNDT<PointSource, PointTarget>::computeTransformation(PointCloudSource& output
   trans_probability_ = score / static_cast<double>(trans_covs_.size());
 }
 
-template <typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget, typename Scalar>
 double
-D2DNDT<PointSource, PointTarget>::computeDerivatives(
+D2DNDT<PointSource, PointTarget, Scalar>::computeDerivatives(
     Eigen::Matrix<double, 6, 1>& score_gradient,
     Eigen::Matrix<double, 6, 6>& hessian,
     bool compute_hessian)
@@ -189,9 +189,9 @@ D2DNDT<PointSource, PointTarget>::computeDerivatives(
   return score;
 }
 
-template <typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget, typename Scalar>
 void
-D2DNDT<PointSource, PointTarget>::computeLocalDerivatives(const Eigen::Vector3d& x,
+D2DNDT<PointSource, PointTarget, Scalar>::computeLocalDerivatives(const Eigen::Vector3d& x,
                                                           const Eigen::Matrix3d& cov,
                                                           bool compute_hessian)
 {
@@ -288,9 +288,9 @@ D2DNDT<PointSource, PointTarget>::computeLocalDerivatives(const Eigen::Vector3d&
   }
 }
 
-template <typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget, typename Scalar>
 double
-D2DNDT<PointSource, PointTarget>::updateDerivatives(
+D2DNDT<PointSource, PointTarget, Scalar>::updateDerivatives(
     Eigen::Matrix<double, 6, 1>& score_gradient,
     Eigen::Matrix<double, 6, 6>& hessian,
     const Eigen::Vector3d& x_trans,
@@ -347,9 +347,9 @@ D2DNDT<PointSource, PointTarget>::updateDerivatives(
   return score_inc;
 }
 
-template <typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget, typename Scalar>
 void
-D2DNDT<PointSource, PointTarget>::computeHessian(Eigen::Matrix<double, 6, 6>& hessian)
+D2DNDT<PointSource, PointTarget, Scalar>::computeHessian(Eigen::Matrix<double, 6, 6>& hessian)
 {
   hessian.setZero();
 
@@ -385,9 +385,9 @@ D2DNDT<PointSource, PointTarget>::computeHessian(Eigen::Matrix<double, 6, 6>& he
     }
   }
 }
-template <typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget, typename Scalar>
 void
-D2DNDT<PointSource, PointTarget>::updateHessian(Eigen::Matrix<double, 6, 6>& hessian,
+D2DNDT<PointSource, PointTarget, Scalar>::updateHessian(Eigen::Matrix<double, 6, 6>& hessian,
                                                 const Eigen::Vector3d& x_trans,
                                                 const Eigen::Matrix3d& c_inv) const
 {
@@ -431,9 +431,9 @@ D2DNDT<PointSource, PointTarget>::updateHessian(Eigen::Matrix<double, 6, 6>& hes
   }
 }
 
-template <typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget, typename Scalar>
 bool
-D2DNDT<PointSource, PointTarget>::updateIntervalMT(double& a_l,
+D2DNDT<PointSource, PointTarget, Scalar>::updateIntervalMT(double& a_l,
                                                    double& f_l,
                                                    double& g_l,
                                                    double& a_u,
@@ -475,9 +475,9 @@ D2DNDT<PointSource, PointTarget>::updateIntervalMT(double& a_l,
   return true;
 }
 
-template <typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget, typename Scalar>
 double
-D2DNDT<PointSource, PointTarget>::trialValueSelectionMT(double a_l,
+D2DNDT<PointSource, PointTarget, Scalar>::trialValueSelectionMT(double a_l,
                                                         double f_l,
                                                         double g_l,
                                                         double a_u,
@@ -559,9 +559,9 @@ D2DNDT<PointSource, PointTarget>::trialValueSelectionMT(double a_l,
   return a_u + (a_t - a_u) * (w - g_u - z) / (g_t - g_u + 2 * w);
 }
 
-template <typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget, typename Scalar>
 double
-D2DNDT<PointSource, PointTarget>::computeStepLengthMT(
+D2DNDT<PointSource, PointTarget, Scalar>::computeStepLengthMT(
     Eigen::Matrix<double, 6, 1>& step_dir,
     double step_init,
     double step_max,
@@ -616,7 +616,7 @@ D2DNDT<PointSource, PointTarget>::computeStepLengthMT(
   a_t = std::min(a_t, step_max);
   a_t = std::max(a_t, step_min);
 
-  Eigen::Matrix4f saved_final_transformation = final_transformation_;
+  Matrix4 saved_final_transformation = final_transformation_;
   updateTransform(step_dir * a_t, final_transformation_);
 
   // new transformed source
